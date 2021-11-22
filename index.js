@@ -2,6 +2,7 @@ const express = require('express')
 const app = express()
 const cors = require('cors')
 const Pool = require('pg').Pool
+const bcrypt = require('bcrypt')
 const pool = new Pool({
   user: 'postgres',
   host: 'localhost',
@@ -13,21 +14,20 @@ const pool = new Pool({
 app.use(cors())
 app.use(express.json())
 
-let users = [
-  {
-    id: 1,
-    email: "ethan@example.com",
-    password: "example",
-  }
-]
-
-app.post('/api/users/login', (request, response) => {
-    pool.query('SELECT * FROM users WHERE (email, password) = ($1, $2)', [request.body.email, request.body.password], (err, res) => {
+app.post('/api/users/login', async (request, response) => {
+    pool.query('SELECT * FROM users WHERE email = $1', [request.body.email], (err, res) => {
       if (err) {
         console.log(err.stack)
       }
       if (res.rows[0]) {
-        response.send(true)
+        bcrypt.compare(request.body.password, res.rows[0].password, (err, result) => {
+          if (result) {
+            response.send(true)
+          }
+          else {
+            response.send(false)
+          }
+        })
       }
       else {
         response.send(false)
