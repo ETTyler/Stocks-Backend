@@ -5,18 +5,19 @@ const Pool = require('pg').Pool
 const bcrypt = require('bcrypt')
 const dotenv = require('dotenv').config()
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'stocks',
-  password: 'ZonedOnline123',
-  port: 5432,
+  user: process.env.PG_USER,
+  host: process.env.PG_HOST,
+  database: process.env.PG_DATABASE,
+  password: process.env.PG_PASSWORD,
+  port: process.env.PG_PORT,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 })
 const jwt = require('jsonwebtoken')
 
 app.use(cors())
 app.use(express.json())
-
-console.log(process.env.SECRET)
 
 app.post('/api/users/login', async (request, response) => {
     pool.query('SELECT * FROM users WHERE email = $1', [request.body.email], (err, res) => {
