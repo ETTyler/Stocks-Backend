@@ -19,6 +19,18 @@ const jwt = require('jsonwebtoken')
 app.use(cors())
 app.use(express.json())
 
+app.get('/api/stocks/info/:id', async (request, response) => {
+  const id = request.params.id
+  pool.query(`select * from "Purchases" inner join "Stocks" ON
+    "Purchases"."Ticker"="Stocks"."Ticker" WHERE
+    "Purchases"."UserID"=${id} ORDER BY "Value" desc;`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    response.send(JSON.stringify(res.rows))
+  })
+})
+
 app.post('/api/users/login', async (request, response) => {
     pool.query('SELECT * FROM users WHERE email = $1', [request.body.email], (err, res) => {
       if (err) {
@@ -27,7 +39,6 @@ app.post('/api/users/login', async (request, response) => {
       if (res.rows[0]) {
         bcrypt.compare(request.body.password, res.rows[0].password, (err, result) => {
           if (result) {
-            
             const userToken = {
               email: res.rows[0].email,
               id: res.rows[0].id, 
@@ -35,7 +46,6 @@ app.post('/api/users/login', async (request, response) => {
             }
             
             const token = jwt.sign(userToken, process.env.SECRET)
-            
             response.send({
               status: true,
               token
