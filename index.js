@@ -4,6 +4,7 @@ const cors = require('cors')
 const Pool = require('pg').Pool
 const bcrypt = require('bcrypt')
 const dotenv = require('dotenv').config()
+const axios = require('axios').default;
 const pool = new Pool({
   user: process.env.PG_USER,
   host: process.env.PG_HOST,
@@ -19,14 +20,53 @@ const jwt = require('jsonwebtoken')
 app.use(cors())
 app.use(express.json())
 
+
+app.get('/api/stocks/update', async (request, response) => {
+  let stockData
+  console.log("hello")
+  pool.query(`SELECT * from "Stocks"`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    const tickers = res.rows.map((purchase) => (
+      purchase.Ticker
+    ))
+    axios
+    .get(`https://financialmodelingprep.com/api/v3/quote/${tickers.join()}?apikey=${process.env.STOCK_API_KEY}`)
+    .then(response => {
+      stockData = response.data
+      tickers.forEach(ticker => {
+        stockData.forEach(stock => {
+          if (ticker === stock.symbol) {
+            pool.query(`UPDATE "Stocks" SET "Price" = ${stock.price} WHERE "Ticker" = '${ticker}';`, async (err, res) => {
+              if (err) {
+                console.log(err.stack)
+              }
+              console.log("success")
+            })
+            pool.query(`UPDATE "Purchases" SET "Value" = ${stock.price}*"Shares" where "Ticker" = '${ticker}';`, async (err, res) => {
+              if (err) {
+                console.log(err.stack)
+              }
+              console.log("success")
+            })
+          }
+        })
+      })    
+    })
+  })
+})
+
+
 app.get('/api/stocks/info/:id', async (request, response) => {
   const id = request.params.id
+
   pool.query(`select * from "Purchases" inner join "Stocks" ON
     "Purchases"."Ticker"="Stocks"."Ticker" WHERE
     "Purchases"."UserID"=${id} ORDER BY "Value" desc;`, async (err, res) => {
     if (err) {
       console.log(err.stack)
-    }
+    }    
     response.send(JSON.stringify(res.rows))
   })
 })
