@@ -20,10 +20,8 @@ const jwt = require('jsonwebtoken')
 app.use(cors())
 app.use(express.json())
 
-
 app.get('/api/stocks/update', async (request, response) => {
   let stockData
-  console.log("hello")
   pool.query(`SELECT * from "Stocks"`, async (err, res) => {
     if (err) {
       console.log(err.stack)
@@ -42,13 +40,11 @@ app.get('/api/stocks/update', async (request, response) => {
               if (err) {
                 console.log(err.stack)
               }
-              console.log("success")
             })
             pool.query(`UPDATE "Purchases" SET "Value" = ${stock.price}*"Shares" where "Ticker" = '${ticker}';`, async (err, res) => {
               if (err) {
                 console.log(err.stack)
               }
-              console.log("success")
             })
           }
         })
