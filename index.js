@@ -30,12 +30,15 @@ app.get('/api/stocks/update', async (request, response) => {
       purchase.Ticker
     ))
     axios
-    .get(`https://financialmodelingprep.com/api/v3/quote/${tickers.join()}?apikey=${process.env.STOCK_API_KEY}`)
+    .get(`https://api.stockdata.org/v1/data/quote?symbols=${tickers.join()}&api_token=${process.env.STOCK_API_KEY}`)
+    .catch(function (error) {
+      console.log(error.toJSON());
+    })
     .then(response => {
-      stockData = response.data
+      stockData = response.data.data
       tickers.forEach(ticker => {
         stockData.forEach(stock => {
-          if (ticker === stock.symbol) {
+          if (ticker === stock.ticker) {
             pool.query(`UPDATE "Stocks" SET "Price" = ${stock.price} WHERE "Ticker" = '${ticker}';`, async (err, res) => {
               if (err) {
                 console.log(err.stack)
