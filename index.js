@@ -54,6 +54,7 @@ app.get('/api/stocks/update', async (request, response) => {
       })    
     })
   })
+  response.send()
 })
 
 
@@ -75,7 +76,7 @@ app.post('/api/users/login', async (request, response) => {
       if (err) {
         console.log(err.stack)
       }
-      if (res.rows[0]) {
+      else if (res.rows[0]) {
         bcrypt.compare(request.body.password, res.rows[0].password, (err, result) => {
           if (result) {
             const userToken = {
