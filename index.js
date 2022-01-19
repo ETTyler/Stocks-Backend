@@ -16,9 +16,44 @@ const pool = new Pool({
   },
 })
 const jwt = require('jsonwebtoken')
+const { PrismaClient } = require('@prisma/client')
 
+const prisma = new PrismaClient()
 app.use(cors())
 app.use(express.json())
+
+app.post('/api/users/login', async (request, response) => {
+  const { email, password } = request.body
+  try {
+    const loginDetails = await prisma.users.findMany({
+      where: { 
+        email: email 
+      }
+    })
+    const user = loginDetails[0]
+    bcrypt.compare(password, user.password, (err, result) => {
+      if (result) {
+        const userToken = {
+          email: user.email,
+          id: user.id, 
+          name: user.name
+        }
+        const token = jwt.sign(userToken, process.env.SECRET)
+        response.send({
+          status: true,
+          token
+        })
+      }
+      else {
+        response.send(false)
+      }
+    }) 
+  }
+  catch (error) {
+    console.log(error)
+    response.send(false)
+  }
+})
 
 app.get('/api/stocks/update', async (request, response) => {
   let stockData
@@ -31,7 +66,7 @@ app.get('/api/stocks/update', async (request, response) => {
     ))
     axios
     .get(`https://api.stockdata.org/v1/data/quote?symbols=${tickers.join()}&api_token=${process.env.STOCK_API_KEY}`)
-    .catch(function (error) {
+    .catch(error => {
       console.log(error.toJSON());
     })
     .then(response => {
@@ -71,36 +106,7 @@ app.get('/api/stocks/info/:id', async (request, response) => {
   })
 })
 
-app.post('/api/users/login', async (request, response) => {
-    pool.query('SELECT * FROM users WHERE email = $1', [request.body.email], (err, res) => {
-      if (err) {
-        console.log(err.stack)
-      }
-      else if (res.rows[0]) {
-        bcrypt.compare(request.body.password, res.rows[0].password, (err, result) => {
-          if (result) {
-            const userToken = {
-              email: res.rows[0].email,
-              id: res.rows[0].id, 
-              name: res.rows[0].name
-            }
-            
-            const token = jwt.sign(userToken, process.env.SECRET)
-            response.send({
-              status: true,
-              token
-            })
-          }
-          else {
-            response.send(false)
-          }
-        })
-      }
-      else {
-        response.send(false)
-      }
-    })
-})
+
 
 const PORT = 3001
 app.listen(PORT, () => {

@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Friends {
+  relationshipID Int @id(map: "friends_pk") @unique(map: "friends_relationshipid_uindex") @default(autoincrement())
+  userID1        Int
+  userID2        Int
+}
+
+model Purchases {
+  transactionID Int       @id(map: "purchases_pk") @unique(map: "purchases_transactionid_uindex") @default(autoincrement())
+  ticker        String?   @db.VarChar(255)
+  date          DateTime? @db.Date
+  priceBought   Decimal?  @db.Decimal(12, 2)
+  shares        Float?
+  userID        Int?
+  salePrice     Decimal?  @db.Money
+  saleDate      DateTime? @db.Date
+  sharesSold    Float?
+  value         Decimal?  @db.Decimal(12, 2)
+}
+
+model Stocks {
+  ticker   String   @id(map: "stocks_pk") @unique(map: "stocks_ticker_uindex") @db.VarChar(255)
+  exchange String?  @db.VarChar
+  sector   String?  @db.VarChar
+  type     String?  @db.VarChar
+  logoURL  String?  @db.VarChar(255)
+  name     String?  @db.VarChar(255)
+  price    Decimal? @db.Decimal(12, 2)
+}
+
+model users {
+  id       Int     @id(map: "users_pk") @unique(map: "users_id_uindex") @default(autoincrement())
+  email    String? @db.VarChar
+  password String? @db.VarChar(60)
+  name     String? @db.VarChar
+}
