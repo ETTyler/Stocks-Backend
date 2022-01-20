@@ -55,6 +55,54 @@ app.post('/api/users/login', async (request, response) => {
   }
 })
 
+app.post('/api/purchases/new', async (request, response) => {
+  const { userID, ticker, date, price, shares } = request.body
+  const dateTime = new Date(date)
+  console.log(dateTime)
+    const result = await prisma.purchases.create({
+      data: {
+        ticker: ticker,
+        date: dateTime,
+        priceBought: price,
+        shares: Number(shares),
+        userID: userID,
+        value: Number(shares*price)
+      }
+    })
+    console.log(result)
+    response.send(result)
+})
+
+
+
+app.get('/api/stocks/info', async (request, response) => {
+  pool.query(`SELECT * from "Stocks"`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    const options = res.rows.map((stock) => (
+      {
+        ticker: stock.Ticker,
+        label: stock.Name
+      }
+    ))
+    response.send(options)
+  })
+})
+
+
+app.get('/api/stocks/info/:id', async (request, response) => {
+  const id = request.params.id
+  pool.query(`select * from "Purchases" inner join "Stocks" ON
+    "Purchases"."ticker"="Stocks"."Ticker" WHERE
+    "Purchases"."userID"=${id} ORDER BY "value" desc;`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }    
+    response.send(res.rows)
+  })
+})
+
 app.get('/api/stocks/update', async (request, response) => {
   let stockData
   pool.query(`SELECT * from "Stocks"`, async (err, res) => {
@@ -79,7 +127,7 @@ app.get('/api/stocks/update', async (request, response) => {
                 console.log(err.stack)
               }
             })
-            pool.query(`UPDATE "Purchases" SET "Value" = ${stock.price}*"Shares" where "Ticker" = '${ticker}';`, async (err, res) => {
+            pool.query(`UPDATE "Purchases" SET "value" = ${stock.price}*"shares" where "ticker" = '${ticker}';`, async (err, res) => {
               if (err) {
                 console.log(err.stack)
               }
@@ -90,20 +138,6 @@ app.get('/api/stocks/update', async (request, response) => {
     })
   })
   response.send()
-})
-
-
-app.get('/api/stocks/info/:id', async (request, response) => {
-  const id = request.params.id
-
-  pool.query(`select * from "Purchases" inner join "Stocks" ON
-    "Purchases"."Ticker"="Stocks"."Ticker" WHERE
-    "Purchases"."UserID"=${id} ORDER BY "Value" desc;`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }    
-    response.send(JSON.stringify(res.rows))
-  })
 })
 
 
