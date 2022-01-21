@@ -57,20 +57,45 @@ app.post('/api/users/login', async (request, response) => {
 
 app.post('/api/purchases/new', async (request, response) => {
   const { userID, ticker, date, price, shares } = request.body
+  const value = price*shares
   const dateTime = new Date(date)
-  console.log(dateTime)
-    const result = await prisma.purchases.create({
-      data: {
-        ticker: ticker,
-        date: dateTime,
-        priceBought: price,
-        shares: Number(shares),
-        userID: userID,
-        value: Number(shares*price)
+
+  pool.query(`select * from "Purchases" WHERE
+  "userID"=${userID};`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }    
+    const tickers = res.rows.map((purchase) => (
+      purchase.ticker
+    ))
+
+    tickers.forEach(tick => {
+      if (ticker === tick) {
+        console.log("this exectuted")
+        pool.query(`UPDATE "Purchases" 
+        SET "priceBought" = (${price}+"priceBought"/2), "value" = "value"+${value}, "shares" = "shares"+${shares} 
+        WHERE "ticker" = '${ticker}' AND "userID" = ${userID};`, async (err, res) => {
+          if (err) {
+            console.log(err.stack)
+          }
+        })
+        response.send()
       }
     })
-    console.log(result)
-    response.send(result)
+    if(!(response.headersSent)) {
+      const result = await prisma.purchases.create({
+        data: {
+          ticker: ticker,
+          date: dateTime,
+          priceBought: price,
+          shares: Number(shares),
+          userID: userID,
+          value: Number(shares*price)
+        }
+      })
+      response.send(result)
+    }
+  })
 })
 
 
