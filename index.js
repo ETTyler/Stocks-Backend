@@ -55,6 +55,22 @@ app.post('/api/users/login', async (request, response) => {
   }
 })
 
+app.post('/api/sale/new', async (request, response) => {
+  const { transactionID, saleDate, salePrice, sharesSold, value, shares } = request.body
+  const newValue = value - (salePrice*sharesSold)
+  const newShares = shares - sharesSold
+
+  pool.query(`UPDATE "Purchases" 
+  SET "salePrice" = ${salePrice}, "saleDate" = '${saleDate}', "value" = ${newValue}, "sharesSold" = ${shares}, "shares" = ${newShares} 
+  WHERE "transactionID" = ${transactionID};`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    response.send("ok")
+  })
+
+})
+
 app.post('/api/purchases/new', async (request, response) => {
   const { userID, ticker, date, price, shares } = request.body
   const value = price*shares
@@ -71,7 +87,6 @@ app.post('/api/purchases/new', async (request, response) => {
 
     tickers.forEach(tick => {
       if (ticker === tick) {
-        console.log("this exectuted")
         pool.query(`UPDATE "Purchases" 
         SET "priceBought" = (${price}+"priceBought"/2), "value" = "value"+${value}, "shares" = "shares"+${shares} 
         WHERE "ticker" = '${ticker}' AND "userID" = ${userID};`, async (err, res) => {
@@ -97,8 +112,6 @@ app.post('/api/purchases/new', async (request, response) => {
     }
   })
 })
-
-
 
 app.get('/api/stocks/info', async (request, response) => {
   pool.query(`SELECT * from "Stocks"`, async (err, res) => {
