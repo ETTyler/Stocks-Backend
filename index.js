@@ -59,15 +59,22 @@ app.post('/api/sale/new', async (request, response) => {
   const { transactionID, saleDate, salePrice, sharesSold, value, shares } = request.body
   const newValue = value - (salePrice*sharesSold)
   const newShares = shares - sharesSold
+  // should just run the api call to get new value
 
-  pool.query(`UPDATE "Purchases" 
-  SET "salePrice" = ${salePrice}, "saleDate" = '${saleDate}', "value" = ${newValue}, "sharesSold" = ${shares}, "shares" = ${newShares} 
-  WHERE "transactionID" = ${transactionID};`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }
-    response.send("ok")
-  })
+  if (newShares === 0) {
+
+  }
+  else {
+    pool.query(`UPDATE "Purchases" 
+    SET "value" = ${newValue}, "shares" = ${newShares} 
+    WHERE "transactionID" = ${transactionID};`, async (err, res) => {
+      if (err) {
+        console.log(err.stack)
+      }
+      response.send("ok")
+    })
+  }
+
 
 })
 
