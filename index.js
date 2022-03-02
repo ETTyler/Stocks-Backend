@@ -61,7 +61,7 @@ app.post('/api/sale/new', async (request, response) => {
   const newShares = shares - sharesSold
   // should just run the api call to get new value
 
-  if (newShares === 0) {
+  if (newShares === -1) {
 
   }
   else {
