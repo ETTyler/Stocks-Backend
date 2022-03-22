@@ -199,7 +199,6 @@ app.get('/api/stocks/history/:id', async (request, response) => {
         shares: purchase.shares
       }
     ))
-    console.log(tickers)
 
     for await (const obj of tickers) {
       const date = obj.date.toISOString().split('T')[0]
@@ -213,6 +212,7 @@ app.get('/api/stocks/history/:id', async (request, response) => {
         const stockPrice = historicalPrices.map(value =>
           [Date.parse(value.date),Number(value.close*obj.shares)]
         )
+        console.log(historicalPrices)
         stockPrices.push(stockPrice)
       })
     }
@@ -220,8 +220,8 @@ app.get('/api/stocks/history/:id', async (request, response) => {
     stockPrices.forEach(element => 
       element.forEach(el => {
         if (map.has(el[0])) {
-          const exist = map.get(el[0])
-          const newValue = Number(exist+el[1])
+          const existingValue = map.get(el[0])
+          const newValue = Number(existingValue+el[1])
           map.set(el[0],newValue)
         }
         else {
@@ -232,8 +232,48 @@ app.get('/api/stocks/history/:id', async (request, response) => {
     const values = Array.from(map,([key,value]) => ([key,value]))
     const sortedValue = values.sort((a, b) => a[0] - b[0])
     response.send(sortedValue)
-    })
   })
+})
+
+app.get('/api/stocks/insights/:id', async (request, response) => {
+  const id = request.params.id
+  pool.query(`select * from "Purchases" inner join "Stocks" ON
+    "Purchases"."ticker"="Stocks"."Ticker" WHERE
+    "Purchases"."userID"=${id} ORDER BY "value" desc;`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    let portfolioValue = 0
+    const map = new Map()
+    res.rows.forEach(purchase => {
+      console.log(purchase.value)
+      portfolioValue += Number(purchase.value)
+      
+      if (map.has(purchase.Sector)) {
+        const existingValue = map.get(purchase.Sector)
+        const newValue = Number(existingValue+purchase.value)
+        map.set(purchase.Sector,newValue)
+      }
+      else {
+        map.set(purchase.Sector,purchase.value) 
+      }
+    })
+    let responseData = []
+    for (const [key, value] of map.entries()) {
+      const percentage = Number(value/portfolioValue*100)
+      responseData.push({
+        name: key,
+        y: percentage
+      })
+    }
+    console.log(responseData)
+    response.send(responseData)
+  })
+})
+
+
+
+
 
 
 
