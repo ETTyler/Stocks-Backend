@@ -27,9 +27,6 @@ model Purchases {
   priceBought   Decimal?  @db.Decimal(12, 2)
   shares        Float?
   userID        Int?
-  salePrice     Decimal?  @db.Money
-  saleDate      DateTime? @db.Date
-  sharesSold    Float?
   value         Decimal?  @db.Decimal(12, 2)
 }
 
@@ -41,4 +38,12 @@ model Stocks {
   LogoURL  String?  @db.VarChar(255)
   Name     String?  @db.VarChar(255)
   Price    Decimal? @db.Decimal(12, 2)
+}
+
+model Sales {
+  saleID     Int       @id(map: "sales_pk") @unique(map: "sales_saleid_uindex")
+  userID     Int?
+  salePrice  Decimal?  @db.Decimal(12, 2)
+  saleDate   DateTime? @db.Date
+  sharesSold Float?
 }

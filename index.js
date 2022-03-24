@@ -22,6 +22,18 @@ const prisma = new PrismaClient()
 app.use(cors())
 app.use(express.json())
 
+const createChartData = (map, overallValue) => {
+  let chartData = []
+  for (const [key, value] of map.entries()) {
+    const percentage = Number(value/overallValue*100).toFixed(2)
+    chartData.push({
+      name: key,
+      y: Number(percentage)
+    })
+  }
+  return chartData
+}
+
 app.post('/api/users/login', async (request, response) => {
   const { email, password } = request.body
   try {
@@ -55,27 +67,48 @@ app.post('/api/users/login', async (request, response) => {
   }
 })
 
-app.post('/api/sale/new', async (request, response) => {
-  const { transactionID, saleDate, salePrice, sharesSold, value, shares } = request.body
-  const newValue = value - (salePrice*sharesSold)
-  const newShares = shares - sharesSold
-  // should just run the api call to get new value
-
-  if (newShares === -1) {
-
-  }
-  else {
-    pool.query(`UPDATE "Purchases" 
-    SET "value" = ${newValue}, "shares" = ${newShares} 
-    WHERE "transactionID" = ${transactionID};`, async (err, res) => {
-      if (err) {
-        console.log(err.stack)
-      }
-      response.send("ok")
+app.get('/api/stock/price/:ticker', async (request, response) => {
+  const ticker = request.params.ticker
+  axios
+    .get(`https://api.stockdata.org/v1/data/quote?symbols=${ticker}&api_token=${process.env.STOCK_API_KEY}`)
+    .catch(error => {
+      console.log(error.toJSON());
+      response.sendStatus(404)
     })
-  }
+    .then(res => {
+      response.send({
+        price: res.data.data[0].price
+      })
+    })
+})
 
-
+app.post('/api/sale/new', async (request, response) => {
+  const { transactionID, saleDate, salePrice, sharesSold, value, shares, ticker, userID } = request.body
+  const newShares = shares - sharesSold
+  axios
+    .get(`http://localhost:3001/api/stock/price/${ticker}`)
+    .catch(error => {
+      console.log(error.toJSON());
+    })
+    .then(res => {
+      const newValue = Number(res.data.price)*Number(newShares)
+      const result = prisma.sales.create({
+        data: {
+          userID: userID,
+          salePrice: salePrice,
+          saleDate: saleDate,
+          sharesSold: sharesSold
+        }
+      })
+      pool.query(`UPDATE "Purchases" 
+      SET "value" = ${newValue}, "shares" = ${newShares} 
+      WHERE "transactionID" = ${transactionID};`, async (err, res) => {
+        if (err) {
+          console.log(err.stack)
+        }
+        response.sendStatus(200)
+      })
+    })
 })
 
 app.post('/api/purchases/new', async (request, response) => {
@@ -212,7 +245,6 @@ app.get('/api/stocks/history/:id', async (request, response) => {
         const stockPrice = historicalPrices.map(value =>
           [Date.parse(value.date),Number(value.close*obj.shares)]
         )
-        console.log(historicalPrices)
         stockPrices.push(stockPrice)
       })
     }
@@ -244,38 +276,39 @@ app.get('/api/stocks/insights/:id', async (request, response) => {
       console.log(err.stack)
     }
     let portfolioValue = 0
-    const map = new Map()
+    const sectorMap = new Map()
+    const typeMap = new Map()
+    const positionMap = new Map()
+    
     res.rows.forEach(purchase => {
-      console.log(purchase.value)
       portfolioValue += Number(purchase.value)
-      
-      if (map.has(purchase.Sector)) {
-        const existingValue = map.get(purchase.Sector)
-        const newValue = Number(existingValue+purchase.value)
-        map.set(purchase.Sector,newValue)
+      if (sectorMap.has(purchase.Sector)) {
+        const existingValue = sectorMap.get(purchase.Sector)
+        const newValue = Number(existingValue)+Number(purchase.value)
+        sectorMap.set(purchase.Sector,newValue)
       }
       else {
-        map.set(purchase.Sector,purchase.value) 
+       sectorMap.set(purchase.Sector,purchase.value) 
       }
+      if (typeMap.has(purchase.Type)) {
+        const existingValue = typeMap.get(purchase.Type)
+        const newValue = Number(existingValue)+Number(purchase.value)
+        typeMap.set(purchase.Type,newValue)
+      }
+      else {
+       typeMap.set(purchase.Type,purchase.value) 
+      }
+      positionMap.set(purchase.Name,purchase.value) 
     })
-    let responseData = []
-    for (const [key, value] of map.entries()) {
-      const percentage = Number(value/portfolioValue*100)
-      responseData.push({
-        name: key,
-        y: percentage
-      })
-    }
-    console.log(responseData)
+    
+    const sectorData = createChartData(sectorMap, portfolioValue)
+    const typeData = createChartData(typeMap, portfolioValue)
+    const positionData = createChartData(positionMap, portfolioValue)
+
+    const responseData = [sectorData,typeData,positionData]
     response.send(responseData)
   })
 })
-
-
-
-
-
-
 
 const PORT = 3001
 app.listen(PORT, () => {
