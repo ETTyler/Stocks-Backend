@@ -17,6 +17,7 @@ const pool = new Pool({
 })
 const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
+const { rows } = require('pg/lib/defaults')
 
 const prisma = new PrismaClient()
 app.use(cors())
@@ -264,6 +265,37 @@ app.get('/api/stocks/history/:id', async (request, response) => {
     const values = Array.from(map,([key,value]) => ([key,value]))
     const sortedValue = values.sort((a, b) => a[0] - b[0])
     response.send(sortedValue)
+  })
+})
+
+app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
+  const id = request.params.id
+  const chosenGraph = request.params.chosenGraph
+  let stockPrices = []
+  pool.query(`select * from "Purchases" inner join "Stocks" ON
+  "Purchases"."ticker"="Stocks"."Ticker" WHERE
+  "Purchases"."userID"=${id} AND "Stocks"."Name"='${chosenGraph}'`, async (err, res) => {
+    if (err) {
+      console.log(err.stack)
+    }
+    const stock = {
+      ticker: res.rows[0].ticker,
+      date: res.rows[0].date,
+      shares: res.rows[0].shares
+    }
+    const date = stock.date.toISOString().split('T')[0]
+    axios
+      .get(`https://api.stockdata.org/v1/data/eod?symbols=${stock.ticker}&date_from=${date}&api_token=${process.env.STOCK_API_KEY}`)
+      .catch(error => {
+        console.log(error.toJSON());
+      })
+      .then(res => {
+        const historicalPrices = res.data.data
+        const stockPrice = historicalPrices.map(value =>
+          [Date.parse(value.date),Number(value.close*stock.shares)]
+        )
+        response.send(stockPrice)
+      })
   })
 })
 
