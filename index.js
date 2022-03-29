@@ -5,6 +5,7 @@ const Pool = require('pg').Pool
 const bcrypt = require('bcrypt')
 const dotenv = require('dotenv').config()
 const axios = require('axios').default;
+const rateLimit = require('express-rate-limit')
 const pool = new Pool({
   user: process.env.PG_USER,
   host: process.env.PG_HOST,
@@ -17,11 +18,18 @@ const pool = new Pool({
 })
 const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
-const { rows } = require('pg/lib/defaults')
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false
+})
 
 const prisma = new PrismaClient()
 app.use(cors())
 app.use(express.json())
+app.use(limiter)
 
 const createChartData = (map, overallValue) => {
   let chartData = []
@@ -294,7 +302,7 @@ app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
         const stockPrice = historicalPrices.map(value =>
           [Date.parse(value.date),Number(value.close*stock.shares)]
         )
-        response.send(stockPrice)
+        response.send(stockPrice.sort())
       })
   })
 })
