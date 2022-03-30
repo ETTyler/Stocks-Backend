@@ -122,58 +122,69 @@ app.post('/api/sale/new', async (request, response) => {
 
 app.post('/api/purchases/new', async (request, response) => {
   const { userID, ticker, date, price, shares } = request.body
-  const value = price*shares
   const dateTime = new Date(date)
+  axios
+  .get(`http://localhost:3001/api/stock/price/${ticker}`)
+  .catch(error => {
+    console.log(error.toJSON());
+  })
+  .then(res => {
+    const newValue = Number(res.data.price)*Number(shares)
 
-  pool.query(`select * from "Purchases" WHERE
-  "userID"=${userID};`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }    
-    const tickers = res.rows.map((purchase) => (
-      purchase.ticker
-    ))
-
-    tickers.forEach(tick => {
-      if (ticker === tick) {
-        pool.query(`UPDATE "Purchases" 
-        SET "priceBought" = (${price}+"priceBought"/2), "value" = "value"+${value}, "shares" = "shares"+${shares} 
-        WHERE "ticker" = '${ticker}' AND "userID" = ${userID};`, async (err, res) => {
-          if (err) {
-            console.log(err.stack)
-          }
-        })
-        response.send()
-      }
-    })
-    if(!(response.headersSent)) {
-      const result = await prisma.purchases.create({
-        data: {
-          ticker: ticker,
-          date: dateTime,
-          priceBought: price,
-          shares: Number(shares),
-          userID: userID,
-          value: Number(shares*price)
+    pool.query(`select * from "Purchases" WHERE
+    "userID"=${userID};`, async (err, res) => {
+      if (err) {
+        console.log(err.stack)
+      }    
+      const tickers = res.rows.map((purchase) => (
+        {
+          ticker: purchase.ticker,
+          shares: purchase.shares
+        }
+      ))
+  
+      tickers.forEach(stock => {
+        if (ticker === stock.ticker) {
+          // found out the maths to get the correct buying average
+          pool.query(`UPDATE "Purchases" 
+          SET "priceBought" = (${price}+"priceBought"/2), "value" = "value"+${newValue}, "shares" = "shares"+${shares} 
+          WHERE "ticker" = '${ticker}' AND "userID" = ${userID};`, async (err, res) => {
+            if (err) {
+              console.log(err.stack)
+            }
+          })
+          response.sendStatus(200)
         }
       })
-      response.send(result)
-    }
+      if(!(response.headersSent)) {
+        const result = await prisma.purchases.create({
+          data: {
+            ticker: ticker,
+            date: dateTime,
+            priceBought: price,
+            shares: Number(shares),
+            userID: userID,
+            value: Number(newValue)
+          }
+        })
+        response.send(result)
+      }
+    })
   })
 })
 
 app.get('/api/stocks/info', async (request, response) => {
-  pool.query(`SELECT * from "Stocks"`, async (err, res) => {
+  pool.query(`SELECT * from "Stocks" ORDER BY "Name"`, async (err, res) => {
     if (err) {
       console.log(err.stack)
     }
-    const options = res.rows.map((stock) => (
+    const options = res.rows.sort().map((stock) => (
       {
         ticker: stock.Ticker,
         label: stock.Name
       }
     ))
-    response.send(options)
+    response.send(options.sort())
   })
 })
 
