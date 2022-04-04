@@ -31,6 +31,8 @@ app.use(cors())
 app.use(express.json())
 app.use(limiter)
 
+// Reusable Functions
+
 const createChartData = (map, overallValue) => {
   let chartData = []
   for (const [key, value] of map.entries()) {
@@ -42,6 +44,13 @@ const createChartData = (map, overallValue) => {
   }
   return chartData
 }
+
+const formatDate = (date) => {
+  return date.toISOString().split('T')[0]
+}
+
+
+// Users routes
 
 app.post('/api/users/login', async (request, response) => {
   const { email, password } = request.body
@@ -76,6 +85,9 @@ app.post('/api/users/login', async (request, response) => {
   }
 })
 
+
+// Stock Price route
+
 app.get('/api/stock/price/:ticker', async (request, response) => {
   const ticker = request.params.ticker
   axios
@@ -91,6 +103,12 @@ app.get('/api/stock/price/:ticker', async (request, response) => {
     })
 })
 
+
+
+
+// Sale/Purchase Routes
+
+// Updates the database when a new sale is made
 app.post('/api/sale/new', async (request, response) => {
   const { transactionID, saleDate, salePrice, sharesSold, value, shares, ticker, userID } = request.body
   const newShares = shares - sharesSold
@@ -120,6 +138,7 @@ app.post('/api/sale/new', async (request, response) => {
     })
 })
 
+// Updates the database when a new purchase is added
 app.post('/api/purchases/new', async (request, response) => {
   const { userID, ticker, date, price, shares } = request.body
   const dateTime = new Date(date)
@@ -173,6 +192,11 @@ app.post('/api/purchases/new', async (request, response) => {
   })
 })
 
+
+// Stocks Info Routes
+
+
+// Gets all the stocks currently in the database
 app.get('/api/stocks/info', async (request, response) => {
   pool.query(`SELECT * from "Stocks" ORDER BY "Name"`, async (err, res) => {
     if (err) {
@@ -188,7 +212,8 @@ app.get('/api/stocks/info', async (request, response) => {
   })
 })
 
-
+// Gets all the stock data for a user
+// TODO if the number of shares is 0 then do not return the stock
 app.get('/api/stocks/info/:id', async (request, response) => {
   const id = request.params.id
   pool.query(`select * from "Purchases" inner join "Stocks" ON
@@ -201,14 +226,16 @@ app.get('/api/stocks/info/:id', async (request, response) => {
   })
 })
 
-app.get('/api/stocks/update', async (request, response) => {
+// Updates the current prices of all the stocks in the database the user owns
+app.get('/api/stocks/update/:id', async (request, response) => {
+  const userID = request.params.id
   let stockData
-  pool.query(`SELECT * from "Stocks"`, async (err, res) => {
+  pool.query(`SELECT * from "Purchases" where "userID"=${userID}`, async (err, res) => {
     if (err) {
       console.log(err.stack)
     }
     const tickers = res.rows.map((purchase) => (
-      purchase.Ticker
+      purchase.ticker
     ))
     axios
     .get(`https://api.stockdata.org/v1/data/quote?symbols=${tickers.join()}&api_token=${process.env.STOCK_API_KEY}`)
@@ -234,10 +261,11 @@ app.get('/api/stocks/update', async (request, response) => {
         })
       })    
     })
+    response.sendStatus(200)
   })
-  response.send()
 })
 
+// Gets the historical data for all the stocks in the portfolio and returns the data combined into a single data set
 app.get('/api/stocks/history/:id', async (request, response) => {
   const id = request.params.id
   let stockPrices = []
@@ -252,11 +280,13 @@ app.get('/api/stocks/history/:id', async (request, response) => {
         shares: purchase.shares
       }
     ))
-
     for await (const obj of tickers) {
-      const date = obj.date.toISOString().split('T')[0]
+      const date = formatDate(obj.date)
+      const currentDate = new Date()
+      currentDate.setDate(currentDate.getDate()-2)
+      const apiDate = formatDate(currentDate)
       await axios
-      .get(`https://api.stockdata.org/v1/data/eod?symbols=${obj.ticker}&date_from=${date}&api_token=${process.env.STOCK_API_KEY}`)
+      .get(`https://api.stockdata.org/v1/data/eod?symbols=${obj.ticker}&date_from=${date}&date_to=${apiDate}&api_token=${process.env.STOCK_API_KEY}`)
       .catch(error => {
         console.log(error.toJSON());
       })
@@ -287,6 +317,7 @@ app.get('/api/stocks/history/:id', async (request, response) => {
   })
 })
 
+// Gets the graph data for the individual stock chosen 
 app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
   const id = request.params.id
   const chosenGraph = request.params.chosenGraph
@@ -310,14 +341,15 @@ app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
       })
       .then(res => {
         const historicalPrices = res.data.data
-        const stockPrice = historicalPrices.map(value =>
+        const stockPrices = historicalPrices.map(value =>
           [Date.parse(value.date),Number(value.close*stock.shares)]
         )
-        response.send(stockPrice.sort())
+        response.send(stockPrices.sort())
       })
   })
 })
 
+// Gets the data for the 3 pie charts
 app.get('/api/stocks/insights/:id', async (request, response) => {
   const id = request.params.id
   pool.query(`select * from "Purchases" inner join "Stocks" ON
@@ -360,6 +392,112 @@ app.get('/api/stocks/insights/:id', async (request, response) => {
     response.send(responseData)
   })
 })
+
+// Gets news articles for analytics page
+app.get('/api/stocks/news/:id', async (request, response) => {
+  const id = request.params.id
+  axios
+    .get(`http://localhost:3001/api/stocks/info/${id}`)
+    .catch(error => {
+      console.log(error.toJSON())
+    })
+    .then(res => {
+      const stocks = res.data.map((purchase) => (
+        purchase.ticker
+      ))
+      axios
+        .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com&api_token=${process.env.STOCK_API_KEY}`)
+        .catch(error => {
+          console.log(error.toJSON())
+        })
+        .then(res => {
+          const num = Math.floor(Math.random()*11)
+          const newsArticle = {
+            stock: res.data.data[num].entities[0].name,
+            title: res.data.data[num].title,
+            description: res.data.data[num].description,
+            url: res.data.data[num].url
+          }
+          response.send(newsArticle)
+        })
+    })
+})
+
+const getPurchases = async (userID) => {
+  try {
+    const purchases = await prisma.purchases.findMany({
+      orderBy: [
+        {
+          date: 'asc'
+        }
+      ],
+      where: { 
+        userID: userID 
+      }
+    })
+    return purchases
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
+
+const getInvestment = async (userID) => {
+  const purchases = await getPurchases(userID)
+  const investment = purchases.reduce((previous, current) => {
+    return Number(previous) + Number(current.priceBought)*Number(current.shares)
+  }, 0)
+  return investment.toFixed(2)
+}
+
+const getCurrentValue = async (userID) => {
+  const purchases = await getPurchases(userID)
+  const currentValue = purchases.reduce((previous, current) => {
+    return Number(previous) + Number(current.value)
+  }, 0)
+  return currentValue.toFixed(2)
+}
+
+const getPercentageChange = async (userID) => {
+  const investment = await getInvestment(userID)
+  const currentValue = await getCurrentValue(userID)
+  const percentageChange = (((currentValue-investment)/investment)*100).toFixed(2)
+  return percentageChange
+}
+
+const getInitialInvestmentDate = async (userID) => {
+  const purchases = await getPurchases(userID)
+  const date = purchases[0].date
+  return date
+}
+
+const marketPercentageChange = async (userID) => {
+  const initialDate = await getInitialInvestmentDate(userID)
+  const formattedInitialDate = formatDate(initialDate)
+  
+  const initialRequest = axios.get(`https://api.stockdata.org/v1/data/eod?symbols=VOO&date=${formattedInitialDate}&api_token=${process.env.STOCK_API_KEY}`)
+  const currentRequest = axios.get(`http://localhost:3001/api/stock/price/VOO`)
+  return axios.all([initialRequest, currentRequest])
+    .catch(error => {
+      console.log(error.toJSON())
+    })
+    .then(axios.spread((res1, res2) => {
+      const percentageChange = (((Number(res2.data.price)-Number(res1.data.data[0].close))/Number(res2.data.price))*100).toFixed(2) 
+      return percentageChange
+    }))
+}
+
+app.get('/api/stocks/differential/:id', async (request, response) => {
+  const id = Number(request.params.id)
+  const percentageChange = await getPercentageChange(id)
+  const marketChange = await marketPercentageChange(id)
+  const differential = percentageChange-marketChange
+  response.send({
+    differential: differential
+  })
+})
+
+
 
 const PORT = 3001
 app.listen(PORT, () => {
