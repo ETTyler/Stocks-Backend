@@ -321,7 +321,6 @@ app.get('/api/stocks/history/:id', async (request, response) => {
 app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
   const id = request.params.id
   const chosenGraph = request.params.chosenGraph
-  let stockPrices = []
   pool.query(`select * from "Purchases" inner join "Stocks" ON
   "Purchases"."ticker"="Stocks"."Ticker" WHERE
   "Purchases"."userID"=${id} AND "Stocks"."Name"='${chosenGraph}'`, async (err, res) => {
@@ -330,12 +329,11 @@ app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
     }
     const stock = {
       ticker: res.rows[0].ticker,
-      date: res.rows[0].date,
+      date: formatDate(res.rows[0].date),
       shares: res.rows[0].shares
     }
-    const date = stock.date.toISOString().split('T')[0]
     axios
-      .get(`https://api.stockdata.org/v1/data/eod?symbols=${stock.ticker}&date_from=${date}&api_token=${process.env.STOCK_API_KEY}`)
+      .get(`https://api.stockdata.org/v1/data/eod?symbols=${stock.ticker}&date_from=${stock.date}&api_token=${process.env.STOCK_API_KEY}`)
       .catch(error => {
         console.log(error.toJSON());
       })
@@ -411,18 +409,18 @@ app.get('/api/stocks/news/:id', async (request, response) => {
           console.log(error.toJSON())
         })
         .then(res => {
-          const num = Math.floor(Math.random()*11)
           const newsArticle = {
-            stock: res.data.data[num].entities[0].name,
-            title: res.data.data[num].title,
-            description: res.data.data[num].description,
-            url: res.data.data[num].url
+            stock: res.data.data[0].entities[0].name,
+            title: res.data.data[0].title,
+            description: res.data.data[0].description,
+            url: res.data.data[0].url
           }
           response.send(newsArticle)
         })
     })
 })
 
+// functions to get the differential
 const getPurchases = async (userID) => {
   try {
     const purchases = await prisma.purchases.findMany({
@@ -458,11 +456,14 @@ const getCurrentValue = async (userID) => {
   return currentValue.toFixed(2)
 }
 
+const calcPercentage = (currentValue, originalValue) => {
+  return (((currentValue-originalValue)/originalValue)*100).toFixed(2)
+}
+
 const getPercentageChange = async (userID) => {
   const investment = await getInvestment(userID)
   const currentValue = await getCurrentValue(userID)
-  const percentageChange = (((currentValue-investment)/investment)*100).toFixed(2)
-  return percentageChange
+  return calcPercentage(currentValue, investment)
 }
 
 const getInitialInvestmentDate = async (userID) => {
@@ -496,6 +497,62 @@ app.get('/api/stocks/differential/:id', async (request, response) => {
     differential: differential
   })
 })
+
+const getDataset = async (id) => {
+  return axios
+  .get(`http://localhost:3001/api/stocks/history/${id}`)
+  .catch(error => {
+    console.log(error.toJSON())
+  })
+  .then(res => {
+    return res.data
+  })
+}
+
+const convertToPercentage = (dataset, comparisonValue) => {
+  const newDataset = dataset.map((element) => (
+    [element[0], Number(calcPercentage(element[1], comparisonValue))]
+  ))
+  return (newDataset)
+}
+
+const marketDataset = async (id) => {
+  const date = await getInitialInvestmentDate(id)
+  const currentDate = new Date()
+  currentDate.setDate(currentDate.getDate()-2)
+  const apiDate = formatDate(currentDate)
+  return axios
+  .get(`https://api.stockdata.org/v1/data/eod?symbols=VOO&date_from=${formatDate(date)}&date_to=${apiDate}&api_token=${process.env.STOCK_API_KEY}`)
+  .catch(error => {
+    console.log(error.toJSON());
+  })
+  .then(res => {
+    const historicalPrices = res.data.data
+    const index = res.data.meta.returned
+    const stockPrices = historicalPrices.map(value =>
+      [Date.parse(value.date),Number(value.close)]
+    )
+    const marketData = {
+      initialPrice: res.data.data[index-1].close,
+      dataset: stockPrices.sort()
+    }
+    return marketData
+  })
+}
+
+app.get('/api/stocks/analytics/graph/:id', async (request, response) => {
+  const id = Number(request.params.id)
+  const userDataset = await getDataset(id)
+  const userInvestment = await getInvestment(id)
+  const userPercentageDataset = convertToPercentage(userDataset, userInvestment)
+  const marketData = await marketDataset(id)
+  const marketPercentageDataset = convertToPercentage(marketData.dataset, marketData.initialPrice)
+  response.send({
+    userDataset: userPercentageDataset,
+    marketDataset: marketPercentageDataset
+  })
+})
+
 
 
 
