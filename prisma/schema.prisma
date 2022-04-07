@@ -41,7 +41,7 @@ model Stocks {
 }
 
 model Sales {
-  saleID     Int       @id(map: "sales_pk") @unique(map: "sales_saleid_uindex")
+  saleID     Int       @id(map: "sales_pk") @unique(map: "sales_saleid_uindex") @default(autoincrement())
   userID     Int?
   salePrice  Decimal?  @db.Decimal(12, 2)
   saleDate   DateTime? @db.Date
