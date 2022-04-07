@@ -404,7 +404,7 @@ app.get('/api/stocks/news/:id', async (request, response) => {
         purchase.ticker
       ))
       axios
-        .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com&api_token=${process.env.STOCK_API_KEY}`)
+        .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com,blueweaveconsulting.com&api_token=${process.env.STOCK_API_KEY}`)
         .catch(error => {
           console.log(error.toJSON())
         })
@@ -498,6 +498,8 @@ app.get('/api/stocks/differential/:id', async (request, response) => {
   })
 })
 
+
+// Functions for Analytics graph
 const getDataset = async (id) => {
   return axios
   .get(`http://localhost:3001/api/stocks/history/${id}`)
@@ -553,6 +555,76 @@ app.get('/api/stocks/analytics/graph/:id', async (request, response) => {
   })
 })
 
+// Analytics Bottom bar functions and route
+const orderByValue = async (userID, order) => {
+  try {
+    const purchases = await prisma.purchases.findFirst({
+      orderBy: [
+        {
+          value: order
+        }
+      ],
+      where: { 
+        userID: userID 
+      },
+    })
+    return purchases
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
+
+const getPurchasesStocks = async (userID) => {
+  try {
+    const res = await pool.query(`select * from "Purchases" inner join "Stocks" ON
+    "Purchases"."ticker"="Stocks"."Ticker" WHERE
+    "Purchases"."userID"=${userID} ORDER BY "value";`)
+    return res.rows
+  } catch (err) {
+    console.log(err.stack)
+  }
+}
+
+const getPercentages = async (userID) => {
+  const array = await getPurchasesStocks(userID)
+  const newArr = array.map(purchase => {
+    const percentage = Number(calcPercentage(Number(purchase.Price),Number(purchase.priceBought)))
+    const obj = {ticker: purchase.Ticker, percentage}
+    return obj
+  })
+  return newArr
+}
+
+const orderPercentage = (arr, order) => {
+  if (order === 'loss') {
+    arr.sort((a,b) => {
+      return(a.percentage - b.percentage)
+    })
+    return Object.values(arr)[0]
+  }
+  else {
+    arr.sort((a,b) => {
+      return(b.percentage - a.percentage)
+    })
+    return Object.values(arr)[0]
+  }
+}
+
+app.get('/api/stocks/analytics/stockinfo/:id', async (request, response) => {
+  const id = Number(request.params.id)
+  const highestValue = await orderByValue(id, 'desc')
+  const lowestValue = await orderByValue(id, 'asc')
+  const percentages = await getPercentages(id)
+  const largestGain = orderPercentage(percentages, 'gain')
+  const largestLoss = orderPercentage(percentages, 'loss')
+  response.send({
+    highestValue,
+    lowestValue,
+    largestGain,
+    largestLoss
+  })
+})
 
 
 
