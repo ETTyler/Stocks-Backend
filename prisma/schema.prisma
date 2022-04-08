@@ -12,12 +12,13 @@ model users {
   email    String? @db.VarChar
   password String? @db.VarChar(60)
   name     String? @db.VarChar
+  avatar   String? @db.VarChar
 }
 
 model Friends {
-  RelationshipID Int @id(map: "friends_pk") @unique(map: "friends_relationshipid_uindex") @default(autoincrement())
-  UserID1        Int
-  UserID2        Int
+  relationshipID Int @id(map: "friends_pk") @unique(map: "friends_relationshipid_uindex") @default(autoincrement())
+  userID1        Int
+  userID2        Int
 }
 
 model Purchases {

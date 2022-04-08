@@ -659,6 +659,101 @@ app.get('/api/stocks/analytics/stockinfo/:id', async (request, response) => {
   })
 })
 
+// Friends data functions and routes
+
+const getFriends = async (userID) => {
+  try {
+    const friends = await prisma.friends.findMany({
+      where: { 
+        userID1: userID 
+      },
+    })
+    return friends
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
+
+const getUserInfo = async (userID) => {
+  try {
+    const user = await prisma.users.findUnique({
+      where: { 
+        id: userID 
+      },
+    })
+    return user
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
+
+const friendsPercentages = async (userID) => {
+  const friends = await getFriends(userID)
+  const percentages =  friends.map(async friend => {
+    const userInfo = await getUserInfo(friend.userID2)
+    const percent = await getPercentageChange(friend.userID2)
+    return {name: userInfo.name, percent}
+  })
+  const resolved = await Promise.all(percentages)
+  return resolved
+}
+
+app.get('/api/stocks/analytics/friends/:id', async (request, response) => {
+  const id = Number(request.params.id)
+  const friends = await friendsPercentages(id)
+  response.send(friends)
+})
+
+const getPurchasesFromDate = async (userID, date) => {
+  try {
+    const res = await pool.query(`select * from "Purchases" WHERE
+    "userID"=${userID} AND "date"<'${date}';`)
+    return res.rows
+  } catch (err) {
+    console.log(err.stack)
+  }
+}
+
+const getPercentagesFromDate = async (userID, date) => {
+  //const apiDate = formatDate(date)
+  const friends = await getFriends(userID)
+  const percentages = friends.map(async friend => {
+    const userInfo = await getUserInfo(friend.userID2)
+    const currentValue = await getCurrentValue(friend.userID2)
+    const purchases = await getPurchasesFromDate(friend.userID2, date)
+    const tickers = purchases.map(purchase => (
+      {
+        ticker: purchase.ticker,
+        shares: purchase.shares
+      }
+    ))
+    let dateValue = 0
+    for await (const obj of tickers) {
+      await axios
+      .get(`https://api.stockdata.org/v1/data/eod?symbols=${obj.ticker}&date=${date}&api_token=${process.env.STOCK_API_KEY}`)
+      .catch(error => {
+        console.log(error.toJSON());
+      })
+      .then(res => {
+        const closePrice = Number(res.data.data[0].close)
+        dateValue += (closePrice*Number(obj.shares))
+      })
+    }
+    const percentageChange = calcPercentage(currentValue, dateValue)
+    return {name: userInfo.name, percent: Number(percentageChange) }
+  })
+  const resolved = await Promise.all(percentages)
+  return resolved
+}
+
+app.get('/api/stocks/analytics/friends/:date/:id', async (request, response) => {
+  const id = Number(request.params.id)
+  const date = request.params.date
+  const friends = await getPercentagesFromDate(id, date)
+  response.send(friends)
+})
 
 
 const PORT = 3001
