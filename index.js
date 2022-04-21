@@ -31,6 +31,24 @@ app.use(cors())
 app.use(express.json())
 app.use(limiter)
 
+const url = 'http://localhost:3001'
+
+// JWT Authentication
+const auth = (req, res, next) => {
+  const token = req.header('Authorization')
+
+  if (!token) {
+    return res.status(403).send("A token is required for authentication");
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.SECRET);
+    req.user = decoded;
+  } catch (err) {
+    return res.status(401).send("Invalid Token");
+  }
+  return next();
+}
+
 // Reusable Functions
 
 const createChartData = (map, overallValue) => {
@@ -113,7 +131,7 @@ app.post('/api/sale/new', async (request, response) => {
   let { transactionID, saleDate, salePrice, sharesSold, shares, ticker, userID } = request.body
   const newShares = shares - sharesSold
   axios
-    .get(`http://localhost:3001/api/stock/price/${ticker}`)
+    .get(`${url}/api/stock/price/${ticker}`)
     .catch(error => {
       console.log(error.toJSON());
     })
@@ -161,7 +179,7 @@ app.post('/api/purchases/new', async (request, response) => {
   let { userID, ticker, date, price, shares } = request.body
   const dateTime = new Date(date)
   axios
-  .get(`http://localhost:3001/api/stock/price/${ticker}`)
+  .get(`${url}/api/stock/price/${ticker}`)
   .catch(error => {
     console.log(error.toJSON());
   })
@@ -232,9 +250,10 @@ app.get('/api/stocks/info', async (request, response) => {
   })
 })
 
+
 // Gets all the stock data for a user
-app.get('/api/stocks/info/:id', async (request, response) => {
-  const id = request.params.id
+app.get('/api/stocks/information', auth, async (request, response) => {
+  const id = request.user.id
   pool.query(`select * from "Purchases" inner join "Stocks" ON
     "Purchases"."ticker"="Stocks"."Ticker" WHERE
     "Purchases"."userID"=${id} AND "Purchases"."shares" > 0 
@@ -415,7 +434,7 @@ app.get('/api/stocks/insights/:id', async (request, response) => {
 app.get('/api/stocks/news/:id', async (request, response) => {
   const id = request.params.id
   axios
-    .get(`http://localhost:3001/api/stocks/info/${id}`)
+    .get(`${url}/api/stocks/info/${id}`)
     .catch(error => {
       console.log(error.toJSON())
     })
@@ -497,7 +516,7 @@ const marketPercentageChange = async (userID) => {
   const formattedInitialDate = formatDate(initialDate)
   
   const initialRequest = axios.get(`https://api.stockdata.org/v1/data/eod?symbols=VOO&date=${formattedInitialDate}&api_token=${process.env.STOCK_API_KEY}`)
-  const currentRequest = axios.get(`http://localhost:3001/api/stock/price/VOO`)
+  const currentRequest = axios.get(`${url}/api/stock/price/VOO`)
   return axios.all([initialRequest, currentRequest])
     .catch(error => {
       console.log(error.toJSON())
@@ -522,7 +541,7 @@ app.get('/api/stocks/differential/:id', async (request, response) => {
 // Functions for Analytics graph
 const getDataset = async (id) => {
   return axios
-  .get(`http://localhost:3001/api/stocks/history/${id}`)
+  .get(`${url}/api/stocks/history/${id}`)
   .catch(error => {
     console.log(error.toJSON())
   })
