@@ -18,6 +18,11 @@ const pool = new Pool({
 })
 const jwt = require('jsonwebtoken')
 const { PrismaClient } = require('@prisma/client')
+const auth = require('./users/auth')
+const { createChartData, formatDate, createStockArray } = require('./tools/tools')
+const database = require('./stocks/internal/database')
+const {stockPrice, historicalStockPrice, multipleStocks, historicalData, historicalDataToNow, news} = require('./stocks/external/stocks')
+const insights = require('./stocks/Controllers/insights')
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -32,41 +37,6 @@ app.use(express.json())
 app.use(limiter)
 
 const url = 'http://localhost:3001'
-
-// JWT Authentication
-const auth = (req, res, next) => {
-  const token = req.header('Authorization')
-
-  if (!token) {
-    return res.status(403).send("A token is required for authentication");
-  }
-  try {
-    const decoded = jwt.verify(token, process.env.SECRET);
-    req.user = decoded;
-  } catch (err) {
-    return res.status(401).send("Invalid Token");
-  }
-  return next();
-}
-
-// Reusable Functions
-
-const createChartData = (map, overallValue) => {
-  let chartData = []
-  for (const [key, value] of map.entries()) {
-    const percentage = Number(value/overallValue*100).toFixed(2)
-    chartData.push({
-      name: key,
-      y: Number(percentage)
-    })
-  }
-  return chartData
-}
-
-const formatDate = (date) => {
-  return date.toISOString().split('T')[0]
-}
-
 
 // Users routes
 
@@ -103,26 +73,17 @@ app.post('/api/users/login', async (request, response) => {
   }
 })
 
-
 // Stock Price route
-
 app.get('/api/stock/price/:ticker', async (request, response) => {
   const ticker = request.params.ticker
-  axios
-    .get(`https://api.stockdata.org/v1/data/quote?symbols=${ticker}&api_token=${process.env.STOCK_API_KEY}`)
-    .catch(error => {
-      console.log(error.toJSON());
-      response.sendStatus(404)
-    })
-    .then(res => {
-      response.send({
-        price: res.data.data[0].price
-      })
-    })
+  const price =  await stockPrice(ticker)
+  if (price) {
+    response.send({price: price})
+  }
+  else {
+    response.sendStatus(404)
+  }
 })
-
-
-
 
 // Sale/Purchase Routes
 
@@ -130,104 +91,54 @@ app.get('/api/stock/price/:ticker', async (request, response) => {
 app.post('/api/sale/new', async (request, response) => {
   let { transactionID, saleDate, salePrice, sharesSold, shares, ticker, userID } = request.body
   const newShares = shares - sharesSold
-  axios
-    .get(`${url}/api/stock/price/${ticker}`)
-    .catch(error => {
-      console.log(error.toJSON());
-    })
-    .then(async res =>  {
-      if(!salePrice) {
-        salePrice = res.data.price
-      }
-      const newValue = Number(res.data.price)*Number(newShares)
-      try {
-        const result = await prisma.sales.create({
-          data: {
-            userID: userID,
-            salePrice: salePrice,
-            saleDate: saleDate,
-            sharesSold: Number(sharesSold)
-          }
-        })
-      }
-      catch (error) {
-        console.log(error)
-      }
-      if(newShares === 0) {
-        pool.query(`DELETE FROM "Purchases" WHERE "transactionID" = ${transactionID};`, async (err, res) => {
-          if (err) {
-            console.log(err.stack)
-          }
-          response.sendStatus(200)
-        })
-      }
-      else {
-        pool.query(`UPDATE "Purchases" 
-        SET "value" = ${newValue}, "shares" = ${newShares} 
-        WHERE "transactionID" = ${transactionID};`, async (err, res) => {
-          if (err) {
-            console.log(err.stack)
-          }
-          response.sendStatus(200)
-        })
-      }
-    })
+  const currentPrice = await stockPrice(ticker)
+    
+  if (!salePrice) {
+    salePrice = currentPrice
+  }
+  const newValue = Number(currentPrice)*Number(newShares)
+  database.sale(userID, salePrice, saleDate, sharesSold, ticker)
+  
+  if (newShares === 0) {
+    database.deletePurchase(transactionID)
+    response.sendStatus(200)
+  }
+  else {
+    database.updatePurchase(transactionID, newValue, newShares)
+    response.sendStatus(200)
+  }
 })
 
 // Updates the database when a new purchase is added
 app.post('/api/purchases/new', async (request, response) => {
   let { userID, ticker, date, price, shares } = request.body
   const dateTime = new Date(date)
-  axios
-  .get(`${url}/api/stock/price/${ticker}`)
-  .catch(error => {
-    console.log(error.toJSON());
-  })
-  .then(res => {
-    if (!price) {
-      price = res.data.price
+  const formattedDate = formatDate(dateTime)
+  if (price === 'historical') {
+    price = await historicalStockPrice(ticker, formattedDate)
+  }
+  else if (price === 'current') {
+    price = await stockPrice(ticker)
+  }
+  const newValue = Number(price)*Number(shares)
+  const purchases = await database.purchases(userID)
+  const tickers = purchases.map((purchase) => (
+    {
+      ticker: purchase.ticker,
+      shares: purchase.shares
     }
-    const newValue = Number(res.data.price)*Number(shares)
-    pool.query(`select * from "Purchases" WHERE
-    "userID"=${userID};`, async (err, res) => {
-      if (err) {
-        console.log(err.stack)
-      }    
-      const tickers = res.rows.map((purchase) => (
-        {
-          ticker: purchase.ticker,
-          shares: purchase.shares
-        }
-      ))
-  
-      tickers.forEach(stock => {
-        if (ticker === stock.ticker) {
-          // found out the maths to get the correct buying average
-          pool.query(`UPDATE "Purchases" 
-          SET "priceBought" = (${price}+"priceBought"/2), "value" = "value"+${newValue}, "shares" = "shares"+${shares} 
-          WHERE "ticker" = '${ticker}' AND "userID" = ${userID};`, async (err, res) => {
-            if (err) {
-              console.log(err.stack)
-            }
-          })
-          response.sendStatus(200)
-        }
-      })
-      if(!(response.headersSent)) {
-        const result = await prisma.purchases.create({
-          data: {
-            ticker: ticker,
-            date: dateTime,
-            priceBought: price,
-            shares: Number(shares),
-            userID: userID,
-            value: Number(newValue)
-          }
-        })
-        response.send(result)
-      }
-    })
+  ))
+  tickers.forEach(stock => {
+    if (ticker === stock.ticker) {
+      database.changePurchase(price, newValue, shares, ticker, userID)
+      // found out the maths to get the correct buying average
+      response.sendStatus(200)
+    }
   })
+  if(!(response.headersSent)) {
+    database.purchase(ticker, dateTime, price, shares, userID, newValue)
+    response.sendStatus(200)
+  }
 })
 
 
@@ -236,227 +147,105 @@ app.post('/api/purchases/new', async (request, response) => {
 
 // Gets all the stocks currently in the database
 app.get('/api/stocks/info', async (request, response) => {
-  pool.query(`SELECT * from "Stocks" ORDER BY "Name"`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
+  const stocks = await database.stocks()
+  const options = stocks.sort().map((stock) => (
+    {
+      ticker: stock.Ticker,
+      label: stock.Name
     }
-    const options = res.rows.sort().map((stock) => (
-      {
-        ticker: stock.Ticker,
-        label: stock.Name
-      }
-    ))
-    response.send(options.sort())
-  })
+  ))
+  response.send(options.sort())
 })
-
 
 // Gets all the stock data for a user
 app.get('/api/stocks/information', auth, async (request, response) => {
   const id = request.user.id
-  pool.query(`select * from "Purchases" inner join "Stocks" ON
-    "Purchases"."ticker"="Stocks"."Ticker" WHERE
-    "Purchases"."userID"=${id} AND "Purchases"."shares" > 0 
-    ORDER BY "value" desc;`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }    
-    response.send(res.rows)
-  })
+  const stockInfo = await database.stockPurchases(id)
+  response.send(stockInfo)
 })
 
 // Updates the current prices of all the stocks in the database the user owns
-app.get('/api/stocks/update/:id', async (request, response) => {
-  const userID = request.params.id
-  let stockData
-  pool.query(`SELECT * from "Purchases" where "userID"=${userID}`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }
-    const tickers = res.rows.map((purchase) => (
-      purchase.ticker
-    ))
-    axios
-    .get(`https://api.stockdata.org/v1/data/quote?symbols=${tickers.join()}&api_token=${process.env.STOCK_API_KEY}`)
-    .catch(error => {
-      console.log(error.toJSON());
+app.get('/api/stocks/update', auth, async (request, response) => {
+  const userID = request.user.id
+  const purchases = await database.purchases(userID)
+  const tickers = purchases.map((purchase) => (
+    purchase.ticker
+  ))
+  const stockData = await multipleStocks(tickers)
+  tickers.forEach(ticker => {
+    stockData.forEach(stock => {
+      if (ticker === stock.ticker) {
+        database.updateStock(stock.price, ticker)
+        database.updatePurchaseValue(stock.price, ticker)
+      }
     })
-    .then(response => {
-      stockData = response.data.data
-      tickers.forEach(ticker => {
-        stockData.forEach(stock => {
-          if (ticker === stock.ticker) {
-            pool.query(`UPDATE "Stocks" SET "Price" = ${stock.price} WHERE "Ticker" = '${ticker}';`, async (err, res) => {
-              if (err) {
-                console.log(err.stack)
-              }
-            })
-            pool.query(`UPDATE "Purchases" SET "value" = ${stock.price}*"shares" where "ticker" = '${ticker}';`, async (err, res) => {
-              if (err) {
-                console.log(err.stack)
-              }
-            })
-          }
-        })
-      })    
-    })
-    response.sendStatus(200)
   })
+  response.sendStatus(200)
 })
 
 // Gets the historical data for all the stocks in the portfolio and returns the data combined into a single data set
-app.get('/api/stocks/history/:id', async (request, response) => {
-  const id = request.params.id
+app.get('/api/stocks/history', auth, async (request, response) => {
+  const id = request.user.id
   let stockPrices = []
-  pool.query(`SELECT * from "Purchases" where "userID"=${id}`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
+  const purchases = await database.purchases(id)
+  const tickers = purchases.map((purchase) => (
+    {
+      ticker: purchase.ticker,
+      date: purchase.date,
+      shares: purchase.shares
     }
-    const tickers = res.rows.map((purchase) => (
-      {
-        ticker: purchase.ticker,
-        date: purchase.date,
-        shares: purchase.shares
-      }
-    ))
-    for await (const obj of tickers) {
-      const date = formatDate(obj.date)
-      const currentDate = new Date()
-      currentDate.setDate(currentDate.getDate()-2)
-      const apiDate = formatDate(currentDate)
-      await axios
-      .get(`https://api.stockdata.org/v1/data/eod?symbols=${obj.ticker}&date_from=${date}&date_to=${apiDate}&api_token=${process.env.STOCK_API_KEY}`)
-      .catch(error => {
-        console.log(error.toJSON());
-      })
-      .then(res => {
-        const historicalPrices = res.data.data
-        const stockPrice = historicalPrices.map(value =>
-          [Date.parse(value.date),Number(value.close*obj.shares)]
-        )
-        stockPrices.push(stockPrice)
-      })
-    }
-    const map = new Map()
-    stockPrices.forEach(element => 
-      element.forEach(el => {
-        if (map.has(el[0])) {
-          const existingValue = map.get(el[0])
-          const newValue = Number(existingValue+el[1])
-          map.set(el[0],newValue)
-        }
-        else {
-          map.set(el[0],el[1]) 
-        }
-      })
-    )
-    const values = Array.from(map,([key,value]) => ([key,value]))
-    const sortedValue = values.sort((a, b) => a[0] - b[0])
-    response.send(sortedValue)
-  })
+  ))
+  for await (const obj of tickers) {
+    const date = formatDate(obj.date)
+    const currentDate = new Date()
+    currentDate.setDate(currentDate.getDate()-2)
+    const apiDate = formatDate(currentDate)
+    
+    const stockPrice = await historicalData(obj.ticker, date, apiDate, obj.shares)
+    stockPrices.push(stockPrice)
+  }
+  const graphData = createStockArray(stockPrices)
+  response.send(graphData)
 })
 
 // Gets the graph data for the individual stock chosen 
-app.get('/api/stocks/graph/:chosenGraph/:id', async (request, response) => {
-  const id = request.params.id
+app.get('/api/stocks/graph/:chosenGraph', auth, async (request, response) => {
+  const id = request.user.id
   const chosenGraph = request.params.chosenGraph
-  pool.query(`select * from "Purchases" inner join "Stocks" ON
-  "Purchases"."ticker"="Stocks"."Ticker" WHERE
-  "Purchases"."userID"=${id} AND "Stocks"."Name"='${chosenGraph}'`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }
-    const stock = {
-      ticker: res.rows[0].ticker,
-      date: formatDate(res.rows[0].date),
-      shares: res.rows[0].shares
-    }
-    axios
-      .get(`https://api.stockdata.org/v1/data/eod?symbols=${stock.ticker}&date_from=${stock.date}&api_token=${process.env.STOCK_API_KEY}`)
-      .catch(error => {
-        console.log(error.toJSON());
-      })
-      .then(res => {
-        const historicalPrices = res.data.data
-        const stockPrices = historicalPrices.map(value =>
-          [Date.parse(value.date),Number(value.close*stock.shares)]
-        )
-        response.send(stockPrices.sort())
-      })
-  })
+
+  const stockPurchase = await database.stockPurchase(id, chosenGraph)
+  const stock = {
+    ticker: stockPurchase[0].ticker,
+    date: formatDate(stockPurchase[0].date),
+    shares: stockPurchase[0].shares
+  }
+  const stockData = await historicalDataToNow(stock.ticker, stock.date, stock.shares)
+  response.send(stockData.sort())
 })
 
 // Gets the data for the 3 pie charts
-app.get('/api/stocks/insights/:id', async (request, response) => {
-  const id = request.params.id
-  pool.query(`select * from "Purchases" inner join "Stocks" ON
-    "Purchases"."ticker"="Stocks"."Ticker" WHERE
-    "Purchases"."userID"=${id} ORDER BY "value" desc;`, async (err, res) => {
-    if (err) {
-      console.log(err.stack)
-    }
-    let portfolioValue = 0
-    const sectorMap = new Map()
-    const typeMap = new Map()
-    const positionMap = new Map()
+app.get('/api/stocks/insights', auth, async (request, response) => {
+  const id = request.user.id
+  const stockPurchases = await database.stockPurchases(id)
     
-    res.rows.forEach(purchase => {
-      portfolioValue += Number(purchase.value)
-      if (sectorMap.has(purchase.Sector)) {
-        const existingValue = sectorMap.get(purchase.Sector)
-        const newValue = Number(existingValue)+Number(purchase.value)
-        sectorMap.set(purchase.Sector,newValue)
-      }
-      else {
-       sectorMap.set(purchase.Sector,purchase.value) 
-      }
-      if (typeMap.has(purchase.Type)) {
-        const existingValue = typeMap.get(purchase.Type)
-        const newValue = Number(existingValue)+Number(purchase.value)
-        typeMap.set(purchase.Type,newValue)
-      }
-      else {
-       typeMap.set(purchase.Type,purchase.value) 
-      }
-      positionMap.set(purchase.Name,purchase.value) 
-    })
-    
-    const sectorData = createChartData(sectorMap, portfolioValue)
-    const typeData = createChartData(typeMap, portfolioValue)
-    const positionData = createChartData(positionMap, portfolioValue)
+  const {sectorMap, typeMap, positionMap, portfolioValue} = insights(stockPurchases)
+  const sectorData = createChartData(sectorMap, portfolioValue)
+  const typeData = createChartData(typeMap, portfolioValue)
+  const positionData = createChartData(positionMap, portfolioValue)
 
-    const responseData = [sectorData,typeData,positionData]
-    response.send(responseData)
-  })
+  const responseData = [sectorData,typeData,positionData]
+  response.send(responseData)
 })
 
 // Gets news articles for analytics page
-app.get('/api/stocks/news/:id', async (request, response) => {
-  const id = request.params.id
-  axios
-    .get(`${url}/api/stocks/info/${id}`)
-    .catch(error => {
-      console.log(error.toJSON())
-    })
-    .then(res => {
-      const stocks = res.data.map((purchase) => (
-        purchase.ticker
-      ))
-      axios
-        .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com,blueweaveconsulting.com&api_token=${process.env.STOCK_API_KEY}`)
-        .catch(error => {
-          console.log(error.toJSON())
-        })
-        .then(res => {
-          const newsArticle = {
-            stock: res.data.data[0].entities[0].name,
-            title: res.data.data[0].title,
-            description: res.data.data[0].description,
-            url: res.data.data[0].url
-          }
-          response.send(newsArticle)
-        })
-    })
+app.get('/api/stocks/news', auth, async (request, response) => {
+  const id = request.user.id
+  const stocks = await database.stockPurchases(id)
+  const tickers = stocks.map((purchase) => (
+    purchase.ticker
+  ))
+  const newsArticle = await news(tickers)
+  response.send(newsArticle)
 })
 
 // functions to get the differential
@@ -527,8 +316,8 @@ const marketPercentageChange = async (userID) => {
     }))
 }
 
-app.get('/api/stocks/differential/:id', async (request, response) => {
-  const id = Number(request.params.id)
+app.get('/api/stocks/differential', auth, async (request, response) => {
+  const id = Number(request.user.id)
   const percentageChange = await getPercentageChange(id)
   const marketChange = await marketPercentageChange(id)
   const differential = percentageChange-marketChange
@@ -539,9 +328,14 @@ app.get('/api/stocks/differential/:id', async (request, response) => {
 
 
 // Functions for Analytics graph
-const getDataset = async (id) => {
+const getDataset = async (token) => {
+  const config = {
+    headers: {
+      Authorization: token
+    }
+  }
   return axios
-  .get(`${url}/api/stocks/history/${id}`)
+  .get(`${url}/api/stocks/history`, config)
   .catch(error => {
     console.log(error.toJSON())
   })
@@ -581,9 +375,10 @@ const marketDataset = async (id) => {
   })
 }
 
-app.get('/api/stocks/analytics/graph/:id', async (request, response) => {
-  const id = Number(request.params.id)
-  const userDataset = await getDataset(id)
+app.get('/api/stocks/analytics/graph', auth, async (request, response) => {
+  const id = Number(request.user.id)
+  const token = request.header('Authorization')
+  const userDataset = await getDataset(token)
   const userInvestment = await getInvestment(id)
   const userPercentageDataset = convertToPercentage(userDataset, userInvestment)
   const marketData = await marketDataset(id)
@@ -661,8 +456,8 @@ const orderPercentage = (arr, order) => {
   }
 }
 
-app.get('/api/stocks/analytics/stockinfo/:id', async (request, response) => {
-  const id = Number(request.params.id)
+app.get('/api/stocks/analytics/stockinfo', auth, async (request, response) => {
+  const id = Number(request.user.id)
   const highestValue = await orderByValue(id, 'desc')
   const highestStockData = await getIndividualStock(id, highestValue.ticker)
   const lowestValue = await orderByValue(id, 'asc')
@@ -719,9 +514,10 @@ const friendsPercentages = async (userID) => {
   return resolved
 }
 
-app.get('/api/stocks/analytics/friends/:id', async (request, response) => {
-  const id = Number(request.params.id)
+app.get('/api/stocks/analytics/friends', auth, async (request, response) => {
+  const id = Number(request.user.id)
   const friends = await friendsPercentages(id)
+  friends.sort((firstItem, secondItem) => Number(secondItem.percent) - Number(firstItem.percent))
   response.send(friends)
 })
 
@@ -736,7 +532,6 @@ const getPurchasesFromDate = async (userID, date) => {
 }
 
 const getPercentagesFromDate = async (userID, date) => {
-  //const apiDate = formatDate(date)
   const friends = await getFriends(userID)
   const percentages = friends.map(async friend => {
     const userInfo = await getUserInfo(friend.userID2)
@@ -767,10 +562,11 @@ const getPercentagesFromDate = async (userID, date) => {
   return resolved
 }
 
-app.get('/api/stocks/analytics/friends/:date/:id', async (request, response) => {
-  const id = Number(request.params.id)
+app.get('/api/stocks/analytics/friends/:date', auth, async (request, response) => {
+  const id = Number(request.user.id)
   const date = request.params.date
   const friends = await getPercentagesFromDate(id, date)
+  friends.sort((firstItem, secondItem) => Number(secondItem.percent) - Number(firstItem.percent))
   response.send(friends)
 })
 

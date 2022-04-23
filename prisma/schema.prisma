@@ -47,4 +47,5 @@ model Sales {
   salePrice  Decimal?  @db.Decimal(12, 2)
   saleDate   DateTime? @db.Date
   sharesSold Float?
+  ticker     String?   @db.VarChar
 }
