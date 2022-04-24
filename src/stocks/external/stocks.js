@@ -36,7 +36,8 @@ const multipleStocks = async (tickers) => {
 }
 
 const historicalData = async (ticker, dateFrom, dateTo, shares) => {
-  return axios
+  if (shares) {
+    return axios
     .get(`https://api.stockdata.org/v1/data/eod?symbols=${ticker}&date_from=${dateFrom}&date_to=${dateTo}&api_token=${process.env.STOCK_API_KEY}`)
     .catch(error => {
       console.log(error.toJSON());
@@ -47,7 +48,19 @@ const historicalData = async (ticker, dateFrom, dateTo, shares) => {
         [Date.parse(value.date),Number(value.close*shares)]
       )
       return stockPrice
-  })
+    })
+  }
+  else {
+    return axios
+    .get(`https://api.stockdata.org/v1/data/eod?symbols=${ticker}&date_from=${dateFrom}&date_to=${dateTo}&api_token=${process.env.STOCK_API_KEY}`)
+    .catch(error => {
+      console.log(error.toJSON());
+    })
+    .then(res => {
+      const historicalPrices = res.data
+      return historicalPrices
+    })
+  }
 }
 
 const historicalDataToNow = async (ticker, dateFrom, shares) => {

@@ -2,6 +2,10 @@ const formatDate = (date) => {
   return date.toISOString().split('T')[0]
 }
 
+const calcPercentage = (currentValue, originalValue) => {
+  return (((currentValue-originalValue)/originalValue)*100).toFixed(2)
+}
+
 const createChartData = (map, overallValue) => {
   let chartData = []
   for (const [key, value] of map.entries()) {
@@ -35,4 +39,4 @@ const createStockArray = (priceData) => {
 
 
 
-module.exports = { createChartData, formatDate, createStockArray }
+module.exports = { createChartData, formatDate, createStockArray, calcPercentage }

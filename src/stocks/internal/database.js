@@ -52,10 +52,44 @@ module.exports.purchase = async (ticker, date, price, shares, userID, value) => 
 
 module.exports.purchases = async (userID) => {
   return prisma.purchases.findMany({
+    orderBy: [
+      {
+        date: 'asc'
+      }
+    ],
     where: {
       userID: userID
     }
   })
+}
+
+module.exports.getPurchasesFromDate = async (id, date) => {
+  try {
+    const res = await pool.query(`select * from "Purchases" WHERE
+    "userID"=${id} AND "date"<'${date}';`)
+    return res.rows
+  } catch (err) {
+    console.log(err.stack)
+  }
+}
+
+module.exports.findPurchase = async (userID, order) => {
+  try {
+    const purchases = await prisma.purchases.findFirst({
+      orderBy: [
+        {
+          value: order
+        }
+      ],
+      where: { 
+        userID: userID 
+      },
+    })
+    return purchases
+  }
+  catch (error) {
+    console.log(error)
+  }
 }
 
 
@@ -136,4 +170,45 @@ module.exports.stockPurchase = async (id, stock) => {
   }
 }
 
+module.exports.stockPurchaseByTicker = async (id, ticker) => {
+  try {
+    const res = await pool.query(`select * from "Purchases" inner join "Stocks" ON
+    "Purchases"."ticker"="Stocks"."Ticker" WHERE
+    "Purchases"."userID"=${id} AND "Purchases"."ticker"='${ticker}'`)
+    return res.rows
+  } catch (err) {
+    console.log(err.stack)
+  }
+}
 
+// friends table
+
+module.exports.friends = async (userID) => {
+  try {
+    const friends = await prisma.friends.findMany({
+      where: { 
+        userID1: userID 
+      },
+    })
+    return friends
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
+
+// user table
+
+module.exports.userInfo = async (userID) => {
+  try {
+    const user = await prisma.users.findUnique({
+      where: { 
+        id: userID 
+      },
+    })
+    return user
+  }
+  catch (error) {
+    console.log(error)
+  }
+}
