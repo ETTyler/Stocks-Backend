@@ -80,7 +80,7 @@ const historicalDataToNow = async (ticker, dateFrom, shares) => {
 
 const news = async (stocks) => {
   return axios
-    .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com,blueweaveconsulting.com&api_token=${process.env.STOCK_API_KEY}`)
+    .get(`https://api.stockdata.org/v1/news/all?symbols=${stocks.join()}&filter_entities=true&language=en&exclude_domains=gurufocus.com,seekingalpha.com,blueweaveconsulting.com&api_token=${process.env.STOCK_API_KEY}`)
     .catch(error => {
       console.log(error.toJSON());
     })

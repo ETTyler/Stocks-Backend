@@ -21,7 +21,6 @@ const insights = (stockPurchases) => {
     createMap(typeMap, purchase, purchase.Type)
     positionMap.set(purchase.Name, purchase.value) 
   })
-
   return {sectorMap, typeMap, positionMap, portfolioValue}
 }
 

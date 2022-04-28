@@ -5,7 +5,6 @@ const { calcPercentage } = require('../../tools/tools')
 
 module.exports.getPercentagesFromDate = async (userID, date) => {
   const friends = await database.friends(userID)
-  
   const percentages = friends.map(async friend => {
     const userInfo = await database.userInfo(friend.userID2)
     const friendPortfolio = await database.purchases(friend.userID2)
@@ -18,11 +17,10 @@ module.exports.getPercentagesFromDate = async (userID, date) => {
         shares: purchase.shares
       }
     ))
-    
     let dateValue = 0
-    for await (const obj of tickers) {
-      const closePrice = await historicalStockPrice(obj.ticker, date)
-      dateValue += (closePrice*Number(obj.shares))
+    for await (const stock of tickers) {
+      const closePrice = await historicalStockPrice(stock.ticker, date)
+      dateValue += (closePrice*Number(stock.shares))
     }
     const percentageChange = calcPercentage(currentValue, dateValue)
     return {name: userInfo.name, percent: Number(percentageChange) }

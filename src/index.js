@@ -244,16 +244,13 @@ app.get('/api/stocks/differential', auth, async (request, response) => {
   })
 })
 
-
 // Analytics Graph Route
 app.get('/api/stocks/analytics/graph', auth, async (request, response) => {
   const id = Number(request.user.id)
   const userDataset = await stockHistory(id)
   const purchases = await database.purchases(id)
-
   const userInvestment = await getInvestment(purchases)
   const marketData = await marketDataset(purchases)
-
   const userPercentageDataset = convertToPercentage(userDataset, userInvestment)
   const marketPercentageDataset = convertToPercentage(marketData.dataset, marketData.initialPrice)
  
@@ -268,7 +265,6 @@ app.get('/api/stocks/analytics/stockinfo', auth, async (request, response) => {
   const id = Number(request.user.id)
   const highestValue = await database.findPurchase(id, 'desc')
   const lowestValue = await database.findPurchase(id, 'asc')
-
   const highestStockData = await database.stockPurchaseByTicker(id, highestValue.ticker)
   const lowestStockData = await database.stockPurchaseByTicker(id, lowestValue.ticker)
   const percentages = await getPercentages(id)
