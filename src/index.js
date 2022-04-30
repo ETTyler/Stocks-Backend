@@ -42,6 +42,7 @@ const prisma = new PrismaClient()
 app.use(cors())
 app.use(express.json())
 app.use(limiter)
+app.use(express.static('build'))
 
 // Users routes
 
