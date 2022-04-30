@@ -1,5 +1,6 @@
 const express = require('express')
 const app = express()
+const path = require('path');
 const cors = require('cors')
 const Pool = require('pg').Pool
 const bcrypt = require('bcrypt')
@@ -43,6 +44,39 @@ app.use(cors())
 app.use(express.json())
 app.use(limiter)
 app.use(express.static('build'))
+
+app.get('/portfolio', function(req, res) {
+  res.sendFile(path.join(__dirname, '../build/index.html'), function(err) {
+    if (err) {
+      res.status(500).send(err)
+    }
+  })
+})
+
+app.get('/insights', function(req, res) {
+  res.sendFile(path.join(__dirname, '../build/index.html'), function(err) {
+    if (err) {
+      res.status(500).send(err)
+    }
+  })
+})
+
+app.get('/analytics', function(req, res) {
+  res.sendFile(path.join(__dirname, '../build/index.html'), function(err) {
+    if (err) {
+      res.status(500).send(err)
+    }
+  })
+})
+
+app.get('/login', function(req, res) {
+  res.sendFile(path.join(__dirname, '../build/index.html'), function(err) {
+    if (err) {
+      res.status(500).send(err)
+    }
+  })
+})
+
 
 // Users routes
 
