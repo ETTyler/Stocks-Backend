@@ -200,7 +200,7 @@ app.get('/api/stocks/info', async (request, response) => {
 app.get('/api/stocks/information', auth, async (request, response) => {
   const id = request.user.id
   const stockInfo = await database.stockPurchases(id)
-  response.send(stockInfo)
+  response.send(stockInfo).status(200)
 })
 
 // Updates the current prices of all the stocks in the database the user owns
@@ -210,16 +210,21 @@ app.get('/api/stocks/update', auth, async (request, response) => {
   const tickers = purchases.map((purchase) => (
     purchase.ticker
   ))
-  const stockData = await multipleStocks(tickers)
-  tickers.forEach(ticker => {
-    stockData.forEach(stock => {
-      if (ticker === stock.ticker) {
-        database.updateStock(stock.price, ticker)
-        database.updatePurchaseValue(stock.price, ticker)
-      }
+  if (tickers.length === 0) {
+    response.sendStatus(200)
+  } 
+  else {
+    const stockData = await multipleStocks(tickers)
+    tickers.forEach(ticker => {
+      stockData.forEach(stock => {
+        if (ticker === stock.ticker) {
+          database.updateStock(stock.price, ticker)
+          database.updatePurchaseValue(stock.price, ticker)
+        }
+      })
     })
-  })
-  response.sendStatus(200)
+    response.sendStatus(200)
+  }
 })
 
 // Gets the historical data for all the stocks in the portfolio and returns the data combined into a single data set
